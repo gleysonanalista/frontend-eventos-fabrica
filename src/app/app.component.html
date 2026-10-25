@@ -1,0 +1,149 @@
+<div class="page-shell">
+  <header class="topbar">
+    <div class="brand-mark">EF</div>
+    <div>
+      <p class="eyebrow">SISTEMA DE INTEGRAÇÃO</p>
+      <h1>Eventos da Fábrica</h1>
+    </div>
+    <span class="api-indicator"><span class="indicator-dot"></span> API REST</span>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">PAINEL DE CONTROLE</p>
+        <h2>Cadastro e consulta de eventos</h2>
+        <p class="muted">Registre eventos de produção e qualidade enviados pelos equipamentos.</p>
+      </div>
+    </section>
+
+    <div *ngIf="mensagem" class="alert" [class.alert-success]="tipoMensagem === 'sucesso'"
+         [class.alert-error]="tipoMensagem === 'erro'" role="status">
+      <span class="alert-symbol">{{ tipoMensagem === 'sucesso' ? '✓' : '!' }}</span>
+      <span>{{ mensagem }}</span>
+      <button type="button" class="alert-close" aria-label="Fechar mensagem" (click)="limparMensagem()">×</button>
+    </div>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div class="heading-icon">＋</div>
+        <div>
+          <h3>Cadastrar novo evento</h3>
+          <p class="muted">Preencha os campos para enviar um evento à API.</p>
+        </div>
+      </div>
+
+      <form (ngSubmit)="cadastrarEvento()" #eventoForm="ngForm">
+        <div class="field">
+          <label for="tipo">Tipo do evento <span class="required">*</span></label>
+          <select id="tipo" name="tipo" [(ngModel)]="tipo" required>
+            <option value="PRODUCTION">PRODUCTION — Produção</option>
+            <option value="QUALITY">QUALITY — Qualidade</option>
+          </select>
+          <small *ngIf="tipo === 'QUALITY'" class="field-hint">Este tipo de evento gera um registro de auditoria no backend.</small>
+        </div>
+
+        <div class="field">
+          <label for="eventId">EVENT_ID <span class="required">*</span></label>
+          <input id="eventId" name="eventId" type="text" [(ngModel)]="eventId"
+                 minlength="8" maxlength="8" required pattern=".{8}"
+                 autocomplete="off" placeholder="Informe 8 caracteres"
+                 aria-describedby="eventIdHint" />
+          <div class="field-footer"><small id="eventIdHint">O identificador deve conter exatamente 8 caracteres.</small><small>{{ eventId.length }}/8</small></div>
+        </div>
+
+        <div class="field">
+          <label for="descricao">Descrição <span class="required">*</span></label>
+          <textarea id="descricao" name="descricao" [(ngModel)]="descricao"
+                    rows="4" maxlength="500" required
+                    placeholder="Descreva o evento ocorrido na fábrica..."></textarea>
+          <div class="field-footer"><small>Informe uma descrição objetiva do evento.</small><small>{{ descricao.length }}/500</small></div>
+        </div>
+
+        <div class="form-actions">
+          <button class="button button-primary" type="submit" [disabled]="enviando || !eventoForm.valid">
+            <span *ngIf="!enviando">Enviar evento <span aria-hidden="true">→</span></span>
+            <span *ngIf="enviando">Enviando...</span>
+          </button>
+          <span class="muted small">Somente a data/hora é gerada automaticamente; informe o EVENT_ID.</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel events-panel">
+      <div class="panel-heading events-heading">
+        <div class="heading-icon heading-icon-blue">▤</div>
+        <div class="heading-title">
+          <h3>Eventos registrados</h3>
+          <p class="muted">Consulta dos eventos persistidos pelo backend.</p>
+        </div>
+        <button type="button" class="button button-secondary" (click)="carregarEventos()" [disabled]="carregando">
+          {{ carregando ? 'Atualizando...' : '↻ Atualizar' }}
+        </button>
+      </div>
+
+      <div *ngIf="!consultaDisponivel" class="notice">
+        <strong>Consulta indisponível</strong>
+        <p>{{ mensagem }}</p>
+        <p>O cadastro via POST pode funcionar normalmente. Para preencher esta tabela, crie no backend o endpoint <code>GET /api/events</code>, retornando uma lista de eventos.</p>
+      </div>
+
+      <div *ngIf="consultaDisponivel && carregando" class="empty-state">Carregando eventos...</div>
+      <div *ngIf="consultaDisponivel && !carregando && eventos.length === 0" class="empty-state">
+        <div class="empty-icon">▤</div>
+        <strong>Nenhum evento para exibir</strong>
+        <p>Quando a API retornar eventos registrados, eles aparecerão nesta tabela.</p>
+      </div>
+
+      <div *ngIf="consultaDisponivel && eventos.length > 0" class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Identificador</th>
+              <th>Data/hora</th>
+              <th>Tipo</th>
+              <th>Descrição</th>
+              <th>Status</th>
+              <th class="actions-col">Excluir</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let evento of eventos">
+              <td class="event-id">{{ evento.eventId }}</td>
+              <td>{{ formatarData(evento.receivedAt || evento.timestamp) }}</td>
+              <td>
+                <span class="type-badge" [class.quality]="evento.type === 'QUALITY'">
+                  {{ evento.type }}
+                </span>
+              </td>
+              <td class="description-cell">{{ evento.description }}</td>
+              <td>{{ evento.status || 'Registrado' }}</td>
+              <td class="actions-cell">
+                <button type="button" class="icon-button icon-button-danger"
+                        (click)="excluirEvento(evento)"
+                        [disabled]="excluindoId !== null"
+                        [attr.aria-label]="'Excluir evento ' + evento.eventId"
+                        [title]="excluindoId === evento.eventId ? 'Excluindo...' : 'Excluir evento'">
+                  <svg *ngIf="excluindoId !== evento.eventId" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                    <path d="M10 11v6"></path>
+                    <path d="M14 11v6"></path>
+                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+                  </svg>
+                  <span *ngIf="excluindoId === evento.eventId" class="spinner" aria-hidden="true"></span>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-foot" *ngIf="consultaDisponivel && eventos.length > 0">
+        {{ eventos.length }} evento(s) retornado(s) pela API
+      </div>
+    </section>
+  </main>
+
+  <footer>Eventos da Fábrica <span>•</span> Frontend Angular integrado à API Spring Boot</footer>
+</div>
